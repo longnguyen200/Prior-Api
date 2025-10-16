@@ -239,7 +239,6 @@ async def extract_pdf(
 @router.get("/patient")
 def get_patient_extractions(
     session: SessionDep,
-    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -247,19 +246,11 @@ def get_patient_extractions(
     Get patient extractions with pagination for current user.
     """
     # Get total count
-    count_statement = select(func.count(PDFExtractedData.id)).where(
-        PDFExtractedData.owner_id == current_user.id
-    )
+    count_statement = select(func.count(PDFExtractedData.id))
     total_count = session.exec(count_statement).one()
 
     # Get paginated results
-    statement = (
-        select(PDFExtractedData)
-        .where(PDFExtractedData.owner_id == current_user.id)
-        .offset(skip)
-        .limit(limit)
-        .order_by(PDFExtractedData.created_at.desc())  # type: ignore
-    )
+    statement = select(PDFExtractedData).offset(skip).limit(limit).order_by(PDFExtractedData.created_at.desc())  # type: ignore
 
     results = session.exec(statement).all()
 
@@ -293,7 +284,6 @@ def get_extraction_config() -> dict[str, Any]:
 def get_patient_data(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
     patientId: str,
 ) -> Any:
     """
@@ -308,7 +298,6 @@ def get_patient_data(
     statement = (
         select(PDFExtractedData)
         .where(PDFExtractedData.id == patient_uuid)
-        .where(PDFExtractedData.owner_id == current_user.id)
     )
 
     patient_data = session.exec(statement).first()
