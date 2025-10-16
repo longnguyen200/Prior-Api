@@ -8,15 +8,14 @@ from uuid import UUID
 import fitz  # PyMuPDF
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from openai import OpenAI
+from sqlmodel import func, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.models import (
     PDFExtractedData,
-    PDFExtractionRequest,
     PDFExtractionResponse,
 )
-from sqlmodel import select, func
 
 router = APIRouter(prefix="/pdf-extraction", tags=["pdf-extraction"])
 logger = logging.getLogger(__name__)
@@ -24,48 +23,48 @@ logger = logging.getLogger(__name__)
 
 def read_config(file_path: str) -> dict[str, Any]:
     """Read extraction config from JSON file."""
-    with open(file_path, "r", encoding="utf-8") as file:
+    with open(file_path, encoding="utf-8") as file:
         return json.load(file)
 
 
 def pdf_to_images_base64(pdf_bytes: bytes, dpi: int = 200) -> list[str]:
     """
     Convert PDF pages to base64 encoded images.
-    
+
     Args:
         pdf_bytes: PDF file content as bytes
         dpi: Resolution for rendering (default 200)
-    
+
     Returns:
         List of base64 encoded images (one per page)
     """
     images_base64 = []
-    
+
     # Open PDF from bytes
     pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-    
+
     # Convert each page to image
     for page_num in range(len(pdf_document)):
         page = pdf_document[page_num]
-        
+
         # Render page to image with zoom factor for higher resolution
         zoom = dpi / 72  # 72 is default DPI
         mat = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
-        
+
         # Convert to PNG bytes
         img_bytes = pix.tobytes("png")
-        
+
         # Encode to base64
         base64_image = base64.b64encode(img_bytes).decode("utf-8")
         images_base64.append(base64_image)
-    
+
     pdf_document.close()
     return images_base64
 
 
 def extract_with_gemini(
-    images_base64: list[str], 
+    images_base64: list[str],
     config_json: dict[str, Any],
     api_key: str,
     model_name: str,
@@ -73,14 +72,14 @@ def extract_with_gemini(
 ) -> dict[str, Any]:
     """
     Extract data from PDF images using Gemini API.
-    
+
     Args:
         images_base64: List of base64 encoded images
         config_json: Configuration defining fields to extract
         api_key: Gemini API key
         model_name: Model name to use
         base_url: Base URL for API
-    
+
     Returns:
         Extracted data as dictionary
     """
@@ -101,20 +100,22 @@ def extract_with_gemini(
         + json.dumps(config_json, ensure_ascii=False, indent=2)
         + "\n\nExtract the data now:"
     )
-    
+
     # Initialize OpenAI client with Gemini endpoint
     client = OpenAI(api_key=api_key, base_url=base_url)
-    
+
     # Prepare messages with all pages
     content: list[dict[str, Any]] = [{"type": "text", "text": ocr_prompt}]
-    
+
     # Add all page images
     for img_base64 in images_base64:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{img_base64}"},
-        })
-    
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{img_base64}"},
+            }
+        )
+
     # Call API with increased token limit for detailed medical records
     response = client.chat.completions.create(
         model=model_name,
@@ -123,12 +124,12 @@ def extract_with_gemini(
         top_p=0.95,
         max_tokens=8192,  # Increased for detailed medical documents
     )
-    
+
     # Parse response
     response_text = response.choices[0].message.content
     if not response_text:
         raise ValueError("Empty response from API")
-    
+
     # Try to parse JSON
     # Remove markdown code blocks if present
     response_text = response_text.strip()
@@ -139,7 +140,7 @@ def extract_with_gemini(
     if response_text.endswith("```"):
         response_text = response_text[:-3]
     response_text = response_text.strip()
-    
+
     return json.loads(response_text)
 
 
@@ -153,10 +154,10 @@ async def extract_pdf(
 ) -> Any:
     """
     Extract structured data from PDF using Gemini Vision API.
-    
+
     - **file**: PDF file to process (multipart/form-data)
     - **save_to_db**: If True, save extracted data to database
-    
+
     Returns extracted data as JSON.
     """
     # Validate API key
@@ -165,30 +166,30 @@ async def extract_pdf(
             status_code=500,
             detail="GEMINI_API_KEY not configured in environment",
         )
-    
+
     # Validate file type
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
             detail="Only PDF files are supported",
         )
-    
+
     try:
         # Read PDF file
         pdf_bytes = await file.read()
-        
+
         if len(pdf_bytes) == 0:
             raise HTTPException(status_code=400, detail="Empty PDF file")
-        
+
         # Read extraction config
         config_path = Path(__file__).parent.parent.parent / "config.json"
         config_json = read_config(str(config_path))
-        
+
         # Convert PDF pages to images
         logger.info(f"Converting PDF to images: {file.filename}")
         images_base64 = pdf_to_images_base64(pdf_bytes)
         logger.info(f"Converted {len(images_base64)} pages")
-        
+
         # Extract data using Gemini
         logger.info("Calling Gemini API for extraction")
         extracted_data = extract_with_gemini(
@@ -198,7 +199,7 @@ async def extract_pdf(
             model_name=settings.GEMINI_MODEL_NAME,
             base_url=settings.GEMINI_BASE_URL,
         )
-        
+
         # Save to database if requested
         saved_id = None
         if save_to_db:
@@ -212,14 +213,14 @@ async def extract_pdf(
             session.refresh(pdf_data)
             saved_id = str(pdf_data.id)
             logger.info(f"Saved to database with ID: {pdf_data.id}")
-        
+
         return PDFExtractionResponse(
             success=True,
             extracted_data=extracted_data,
             filename=file.filename,
             id=saved_id,
         )
-        
+
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON response: {e}")
         raise HTTPException(
@@ -244,14 +245,13 @@ def get_patient_extractions(
 ) -> Any:
     """
     Get patient extractions with pagination for current user.
-    """ 
+    """
     # Get total count
-    count_statement = (
-        select(func.count(PDFExtractedData.id))
-        .where(PDFExtractedData.owner_id == current_user.id)
+    count_statement = select(func.count(PDFExtractedData.id)).where(
+        PDFExtractedData.owner_id == current_user.id
     )
     total_count = session.exec(count_statement).one()
-    
+
     # Get paginated results
     statement = (
         select(PDFExtractedData)
@@ -260,9 +260,9 @@ def get_patient_extractions(
         .limit(limit)
         .order_by(PDFExtractedData.created_at.desc())  # type: ignore
     )
-    
+
     results = session.exec(statement).all()
-    
+
     return {
         "data": [
             {
@@ -304,18 +304,18 @@ def get_patient_data(
         patient_uuid = UUID(patientId)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid patient ID format")
-    
+
     statement = (
         select(PDFExtractedData)
         .where(PDFExtractedData.id == patient_uuid)
         .where(PDFExtractedData.owner_id == current_user.id)
     )
-    
+
     patient_data = session.exec(statement).first()
-    
+
     if not patient_data:
         raise HTTPException(status_code=404, detail="Patient data not found")
-    
+
     return {
         "id": str(patient_data.id),
         "filename": patient_data.filename,
@@ -334,24 +334,24 @@ def delete_patient_data(
     """
     Delete patient data by ID.
     """
-  
+
     try:
         patient_uuid = UUID(patientId)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid patient ID format")
-    
+
     statement = (
         select(PDFExtractedData)
         .where(PDFExtractedData.id == patient_uuid)
         .where(PDFExtractedData.owner_id == current_user.id)
     )
-    
+
     patient_data = session.exec(statement).first()
-    
+
     if not patient_data:
         raise HTTPException(status_code=404, detail="Patient data not found")
-    
+
     session.delete(patient_data)
     session.commit()
-    
+
     return {"message": "Patient data deleted successfully"}
