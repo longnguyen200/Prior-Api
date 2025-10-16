@@ -1,13 +1,14 @@
 import base64
+import hashlib
 import io
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import fitz  # PyMuPDF
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -97,13 +98,12 @@ def extract_with_vertex_ai(
         "6. Include all dates in their original format\n"
         "7. Be thorough - extract every detail visible in the document\n"
         "8. Return ONLY valid JSON, no additional text or explanations\n\n"
-        "JSON TEMPLATE:\n"
-        + json.dumps(config_json, ensure_ascii=False, indent=2)
+        "JSON TEMPLATE:\n" + json.dumps(config_json, ensure_ascii=False, indent=2)
     )
 
     # Initialize Vertex AI client
     client = genai.Client(api_key=api_key, vertexai=True)
-    
+
     # Prepare image inputs
     image_inputs = []
     for img_base64 in images_base64:
@@ -116,7 +116,7 @@ def extract_with_vertex_ai(
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
         temperature=0.2,
-        response_mime_type='application/json',
+        response_mime_type="application/json",
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
 
@@ -153,12 +153,20 @@ async def extract_pdf(
     current_user: CurrentUser,
     file: UploadFile = File(..., description="PDF file to extract"),
     save_to_db: bool = False,
+    dedup_mode: Literal["skip", "overwrite", "error"] = Query(
+        default="skip",
+        description="Deduplication mode: 'skip' returns existing, 'overwrite' replaces, 'error' raises error",
+    ),
 ) -> Any:
     """
     Extract structured data from PDF using Gemini Vision API.
 
     - **file**: PDF file to process (multipart/form-data)
     - **save_to_db**: If True, save extracted data to database
+    - **dedup_mode**: How to handle duplicate files:
+        - 'skip': Return existing extraction without re-processing
+        - 'overwrite': Delete old and create new extraction
+        - 'error': Raise error if duplicate found
 
     Returns extracted data as JSON.
     """
@@ -183,6 +191,43 @@ async def extract_pdf(
         if len(pdf_bytes) == 0:
             raise HTTPException(status_code=400, detail="Empty PDF file")
 
+        # Calculate file hash for deduplication
+        file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        logger.info(f"File hash: {file_hash}")
+
+        # Check for existing extraction if saving to DB
+        existing_record = None
+        if save_to_db:
+            statement = select(PDFExtractedData).where(
+                PDFExtractedData.owner_id == current_user.id,
+                PDFExtractedData.file_hash == file_hash,
+            )
+            existing_record = session.exec(statement).first()
+
+            if existing_record:
+                logger.info(f"Found existing extraction with ID: {existing_record.id}")
+
+                if dedup_mode == "error":
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"This file has already been processed. Existing record ID: {existing_record.id}",
+                    )
+                elif dedup_mode == "skip":
+                    # Return existing extraction without re-processing
+                    logger.info("Returning existing extraction (skip mode)")
+                    return PDFExtractionResponse(
+                        success=True,
+                        extracted_data=json.loads(existing_record.extracted_data),
+                        filename=existing_record.filename,
+                        id=str(existing_record.id),
+                    )
+                elif dedup_mode == "overwrite":
+                    # Delete existing record, will create new one below
+                    logger.info("Deleting existing extraction (overwrite mode)")
+                    session.delete(existing_record)
+                    session.commit()
+                    existing_record = None
+
         # Read extraction config
         config_path = Path(__file__).parent.parent.parent / "config.json"
         config_json = read_config(str(config_path))
@@ -206,6 +251,7 @@ async def extract_pdf(
         if save_to_db:
             pdf_data = PDFExtractedData(
                 filename=file.filename,
+                file_hash=file_hash,
                 extracted_data=json.dumps(extracted_data, ensure_ascii=False),
                 owner_id=current_user.id,
             )

@@ -138,6 +138,7 @@ class PDFExtractedData(SQLModel, table=True):
     __tablename__ = "pdf_extracted_data"
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     filename: str = Field(max_length=255)
+    file_hash: str = Field(max_length=64, index=True)  # SHA256 hash of file content
     extracted_data: str  # JSON string
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
