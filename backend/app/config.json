@@ -1,0 +1,17 @@
+{
+  "document_type": "string - document type",
+  "document_number": "string - document number",
+  "date": "string - date",
+  "title": "string - title",
+  "issuing_organization": "string - issuing organization",
+  "signer": "string - signer name",
+  "content": "string - main content",
+  "additional_fields": {
+    "key1": "value1",
+    "key2": "value2"
+  }
+}
+
+
+
+
