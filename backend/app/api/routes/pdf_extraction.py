@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import logging
 from pathlib import Path
@@ -7,7 +8,9 @@ from uuid import UUID
 
 import fitz  # PyMuPDF
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from openai import OpenAI
+from google import genai
+from google.genai import types
+from PIL import Image
 from sqlmodel import func, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -63,28 +66,26 @@ def pdf_to_images_base64(pdf_bytes: bytes, dpi: int = 200) -> list[str]:
     return images_base64
 
 
-def extract_with_gemini(
+def extract_with_vertex_ai(
     images_base64: list[str],
     config_json: dict[str, Any],
     api_key: str,
     model_name: str,
-    base_url: str,
 ) -> dict[str, Any]:
     """
-    Extract data from PDF images using Gemini API.
+    Extract data from PDF images using Vertex AI Gemini.
 
     Args:
         images_base64: List of base64 encoded images
         config_json: Configuration defining fields to extract
         api_key: Gemini API key
         model_name: Model name to use
-        base_url: Base URL for API
 
     Returns:
         Extracted data as dictionary
     """
     # Create detailed prompt for medical records extraction
-    ocr_prompt = (
+    system_prompt = (
         "You are an expert medical document data extraction assistant. "
         "Carefully analyze all pages of this medical document and extract structured data.\n\n"
         "INSTRUCTIONS:\n"
@@ -98,35 +99,36 @@ def extract_with_gemini(
         "8. Return ONLY valid JSON, no additional text or explanations\n\n"
         "JSON TEMPLATE:\n"
         + json.dumps(config_json, ensure_ascii=False, indent=2)
-        + "\n\nExtract the data now:"
     )
 
-    # Initialize OpenAI client with Gemini endpoint
-    client = OpenAI(api_key=api_key, base_url=base_url)
-
-    # Prepare messages with all pages
-    content: list[dict[str, Any]] = [{"type": "text", "text": ocr_prompt}]
-
-    # Add all page images
+    # Initialize Vertex AI client
+    client = genai.Client(api_key=api_key, vertexai=True)
+    
+    # Prepare image inputs
+    image_inputs = []
     for img_base64 in images_base64:
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{img_base64}"},
-            }
-        )
+        # Convert base64 to PIL Image
+        img_data = base64.b64decode(img_base64)
+        image = Image.open(io.BytesIO(img_data))
+        image_inputs.append(image)
 
-    # Call API with increased token limit for detailed medical records
-    response = client.chat.completions.create(
+    # Prepare configuration with system instruction
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=0.2,
+        response_mime_type='application/json',
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+    )
+
+    # Generate content with images
+    response = client.models.generate_content(
         model=model_name,
-        messages=[{"role": "user", "content": content}],
-        temperature=0.2,  # Lower temperature for more consistent extraction
-        top_p=0.95,
-        max_tokens=8192,  # Increased for detailed medical documents
+        contents=image_inputs,
+        config=config,
     )
 
     # Parse response
-    response_text = response.choices[0].message.content
+    response_text = response.text
     if not response_text:
         raise ValueError("Empty response from API")
 
@@ -190,14 +192,13 @@ async def extract_pdf(
         images_base64 = pdf_to_images_base64(pdf_bytes)
         logger.info(f"Converted {len(images_base64)} pages")
 
-        # Extract data using Gemini
-        logger.info("Calling Gemini API for extraction")
-        extracted_data = extract_with_gemini(
+        # Extract data using Vertex AI Gemini
+        logger.info("Calling Vertex AI Gemini API for extraction")
+        extracted_data = extract_with_vertex_ai(
             images_base64=images_base64,
             config_json=config_json,
             api_key=settings.GEMINI_API_KEY,
             model_name=settings.GEMINI_MODEL_NAME,
-            base_url=settings.GEMINI_BASE_URL,
         )
 
         # Save to database if requested
@@ -239,6 +240,7 @@ async def extract_pdf(
 @router.get("/patient")
 def get_patient_extractions(
     session: SessionDep,
+    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -246,11 +248,19 @@ def get_patient_extractions(
     Get patient extractions with pagination for current user.
     """
     # Get total count
-    count_statement = select(func.count(PDFExtractedData.id))
+    count_statement = select(func.count(PDFExtractedData.id)).where(
+        PDFExtractedData.owner_id == current_user.id
+    )
     total_count = session.exec(count_statement).one()
 
     # Get paginated results
-    statement = select(PDFExtractedData).offset(skip).limit(limit).order_by(PDFExtractedData.created_at.desc())  # type: ignore
+    statement = (
+        select(PDFExtractedData)
+        .where(PDFExtractedData.owner_id == current_user.id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(PDFExtractedData.created_at.desc())  # type: ignore
+    )
 
     results = session.exec(statement).all()
 
@@ -284,6 +294,7 @@ def get_extraction_config() -> dict[str, Any]:
 def get_patient_data(
     *,
     session: SessionDep,
+    current_user: CurrentUser,
     patientId: str,
 ) -> Any:
     """
@@ -298,6 +309,7 @@ def get_patient_data(
     statement = (
         select(PDFExtractedData)
         .where(PDFExtractedData.id == patient_uuid)
+        .where(PDFExtractedData.owner_id == current_user.id)
     )
 
     patient_data = session.exec(statement).first()

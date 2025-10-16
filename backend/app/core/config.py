@@ -96,7 +96,7 @@ class Settings(BaseSettings):
 
     # Gemini API Configuration
     GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL_NAME: str = "gemini-2.0-flash"
+    GEMINI_MODEL_NAME: str = "gemini-2.5-flash"
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:

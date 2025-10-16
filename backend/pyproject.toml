@@ -27,6 +27,9 @@ dependencies = [
     # PDF and AI libraries
     "openai>=1.0.0",
     "pymupdf>=1.23.0",
+    "google-generativeai>=0.3.0",
+    "pillow>=10.0.0",
+    "google-genai>=1.45.0",
 ]
 
 [tool.uv]
