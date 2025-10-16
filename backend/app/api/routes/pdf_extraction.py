@@ -286,23 +286,19 @@ async def extract_pdf(
 @router.get("/patient")
 def get_patient_extractions(
     session: SessionDep,
-    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
     """
-    Get patient extractions with pagination for current user.
+    Get all patient extractions with pagination (no authentication required).
     """
     # Get total count
-    count_statement = select(func.count(PDFExtractedData.id)).where(
-        PDFExtractedData.owner_id == current_user.id
-    )
+    count_statement = select(func.count(PDFExtractedData.id))
     total_count = session.exec(count_statement).one()
 
     # Get paginated results
     statement = (
         select(PDFExtractedData)
-        .where(PDFExtractedData.owner_id == current_user.id)
         .offset(skip)
         .limit(limit)
         .order_by(PDFExtractedData.created_at.desc())  # type: ignore
@@ -340,11 +336,10 @@ def get_extraction_config() -> dict[str, Any]:
 def get_patient_data(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
     patientId: str,
 ) -> Any:
     """
-    Get detailed patient data by ID.
+    Get detailed patient data by ID (no authentication required).
     """
 
     try:
@@ -352,11 +347,7 @@ def get_patient_data(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid patient ID format")
 
-    statement = (
-        select(PDFExtractedData)
-        .where(PDFExtractedData.id == patient_uuid)
-        .where(PDFExtractedData.owner_id == current_user.id)
-    )
+    statement = select(PDFExtractedData).where(PDFExtractedData.id == patient_uuid)
 
     patient_data = session.exec(statement).first()
 
