@@ -1,17 +1,182 @@
 {
-  "document_type": "string - document type",
-  "document_number": "string - document number",
-  "date": "string - date",
-  "title": "string - title",
-  "issuing_organization": "string - issuing organization",
-  "signer": "string - signer name",
-  "content": "string - main content",
-  "additional_fields": {
-    "key1": "value1",
-    "key2": "value2"
+  "document_type": "Type of document (e.g., Visit Note, Discharge Summary, Lab Report)",
+  "visit_date": "Date of visit or document",
+  "page_count": "Number of pages",
+  
+  "patient_info": {
+    "full_name": "Patient's full name",
+    "mrn": "Medical Record Number",
+    "pms_id": "PMS ID or Patient ID",
+    "date_of_birth": "Date of birth",
+    "age": "Age (if available)",
+    "sex": "Gender/Sex",
+    "phone": "Phone number",
+    "address": "Address (if available)"
+  },
+  
+  "provider_info": {
+    "provider_name": "Name of physician/healthcare provider",
+    "role": "Role (Primary Provider, Specialist, etc.)",
+    "facility_name": "Name of medical facility",
+    "facility_address": "Address of medical facility",
+    "phone": "Phone number",
+    "fax": "Fax number"
+  },
+  
+  "allergies": [
+    {
+      "allergen": "Name of allergen",
+      "reaction": "Allergic reaction",
+      "reviewed_date": "Date reviewed"
+    }
+  ],
+  
+  "medications": [
+    {
+      "medication_name": "Name of medication",
+      "dosage": "Dosage amount",
+      "route": "Route of administration (Oral, IV, etc.)",
+      "form": "Form of medication (tablet, capsule, etc.)",
+      "frequency": "Frequency of use",
+      "reviewed_date": "Date reviewed"
+    }
+  ],
+  
+  "medical_history": {
+    "conditions": [
+      "List of current and past medical conditions"
+    ],
+    "reviewed_date": "Date reviewed"
+  },
+  
+  "family_history": {
+    "conditions": [
+      "Family medical history conditions"
+    ],
+    "reviewed_date": "Date reviewed"
+  },
+  
+  "social_history": {
+    "smoking_status": "Smoking status",
+    "alcohol_use": "Alcohol consumption",
+    "exercise": "Exercise habits",
+    "occupation": "Occupation/job",
+    "living_situation": "Living situation",
+    "feels_safe_at_home": "Feels safe at home (Yes/No)",
+    "driving_status": "Driving status",
+    "additional_details": "Additional details",
+    "reviewed_date": "Date reviewed"
+  },
+  
+  "surgical_history": {
+    "surgeries": [
+      {
+        "procedure": "Name of surgical procedure",
+        "date": "Date performed",
+        "location": "Anatomical location"
+      }
+    ],
+    "reviewed_date": "Date reviewed"
+  },
+  
+  "chief_complaint": "Main reason for visit",
+  
+  "history_of_present_illness": {
+    "description": "Detailed description of current illness",
+    "date_of_injury": "Date of injury (if applicable)",
+    "mechanism_of_injury": "Mechanism of injury",
+    "symptoms": [
+      "List of symptoms"
+    ],
+    "symptom_duration": "Duration of symptoms",
+    "previous_treatments": [
+      "Treatments already attempted"
+    ],
+    "previous_visits": [
+      {
+        "date": "Date of previous visit",
+        "summary": "Summary of previous visit"
+      }
+    ]
+  },
+  
+  "physical_examination": {
+    "body_part": "Body part examined",
+    "laterality": "Side (left/right/bilateral)",
+    "rom": "Range of Motion",
+    "skin": "Skin condition",
+    "inspection": "Inspection findings",
+    "stability": "Stability assessment",
+    "special_tests": "Special tests performed",
+    "tenderness": "Areas of tenderness",
+    "additional_findings": [
+      "Other examination findings"
+    ]
+  },
+  
+  "diagnostic_tests": [
+    {
+      "test_type": "Type of test/imaging (US, MRI, X-ray, CT, Lab)",
+      "test_date": "Date performed",
+      "body_part": "Body part examined",
+      "laterality": "Side (left/right/bilateral)",
+      "protocol": "Protocol/method used",
+      "findings": [
+        "Main findings/results"
+      ],
+      "interpretation": "Interpretation of results",
+      "cpt_code": "CPT code (if available)"
+    }
+  ],
+  
+  "diagnosis": [
+    {
+      "condition": "Diagnosis name",
+      "icd_code": "ICD code",
+      "laterality": "Side (if applicable)",
+      "location": "Anatomical location",
+      "severity": "Severity (if noted)",
+      "associated_diagnoses": [
+        "Related diagnoses"
+      ]
+    }
+  ],
+  
+  "treatment_plan": {
+    "orders": [
+      {
+        "order_type": "Type of order (Procedure, Medication, Imaging, Physical Therapy, etc.)",
+        "description": "Detailed description",
+        "indication": "Indication for treatment",
+        "laterality": "Side (if applicable)",
+        "cpt_codes": [
+          "List of CPT codes"
+        ],
+        "provider": "Performing physician",
+        "priority": "Priority level",
+        "estimated_time": "Estimated time (if applicable)",
+        "estimated_stay": "Estimated length of stay (if applicable)",
+        "equipment_required": "Required equipment",
+        "additional_details": "Additional details"
+      }
+    ],
+    "patient_education": "Patient counseling/education",
+    "risks_and_benefits_discussion": "Discussion of risks and benefits",
+    "follow_up": "Follow-up plan",
+    "additional_notes": "Additional notes"
+  },
+  
+  "staff_signature": {
+    "signed_by": "Name of person signing",
+    "signature_date": "Date signed",
+    "signature_time": "Time signed",
+    "signature_type": "Type of signature (Electronic, Manual)"
+  },
+  
+  "additional_information": {
+    "notes": "Other notes",
+    "comments": "Comments",
+    "billing_information": "Billing information (if available)",
+    "insurance_information": "Insurance information (if available)"
   }
 }
-
-
-
-

@@ -130,10 +130,12 @@ class PDFExtractionResponse(SQLModel):
     extracted_data: dict[str, Any] | None = None
     error: str | None = None
     filename: str
+    id: str | None = None  # ID of saved record when save_to_db=True
 
 
 # Database model for storing extracted PDF data
 class PDFExtractedData(SQLModel, table=True):
+    __tablename__ = "pdf_extracted_data"
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     filename: str = Field(max_length=255)
     extracted_data: str  # JSON string
@@ -142,3 +144,5 @@ class PDFExtractedData(SQLModel, table=True):
         foreign_key="user.id", nullable=False, ondelete="CASCADE"
     )
     owner: User | None = Relationship()
+
+

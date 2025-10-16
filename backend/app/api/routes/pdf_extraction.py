@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import fitz  # PyMuPDF
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -82,11 +83,22 @@ def extract_with_gemini(
     Returns:
         Extracted data as dictionary
     """
-    # Create prompt
+    # Create detailed prompt for medical records extraction
     ocr_prompt = (
-        "Extract data from the images. Return JSON format according to this template:\n"
-        + json.dumps(config_json, ensure_ascii=False)
-        + "\n\nNote: Return only JSON, no additional text."
+        "You are an expert medical document data extraction assistant. "
+        "Carefully analyze all pages of this medical document and extract structured data.\n\n"
+        "INSTRUCTIONS:\n"
+        "1. Extract ALL available information from the document\n"
+        "2. Follow the JSON template structure provided below\n"
+        "3. If a field is not present in the document, use null for that field\n"
+        "4. For array fields (like medications, allergies), include all items found\n"
+        "5. Preserve exact medical terminology, codes (ICD, CPT), and formatting\n"
+        "6. Include all dates in their original format\n"
+        "7. Be thorough - extract every detail visible in the document\n"
+        "8. Return ONLY valid JSON, no additional text or explanations\n\n"
+        "JSON TEMPLATE:\n"
+        + json.dumps(config_json, ensure_ascii=False, indent=2)
+        + "\n\nExtract the data now:"
     )
     
     # Initialize OpenAI client with Gemini endpoint
@@ -102,13 +114,13 @@ def extract_with_gemini(
             "image_url": {"url": f"data:image/png;base64,{img_base64}"},
         })
     
-    # Call API
+    # Call API with increased token limit for detailed medical records
     response = client.chat.completions.create(
         model=model_name,
         messages=[{"role": "user", "content": content}],
-        temperature=0.6,
-        top_p=0.8,
-        max_tokens=2048,
+        temperature=0.2,  # Lower temperature for more consistent extraction
+        top_p=0.95,
+        max_tokens=8192,  # Increased for detailed medical documents
     )
     
     # Parse response
@@ -187,6 +199,7 @@ async def extract_pdf(
         )
         
         # Save to database if requested
+        saved_id = None
         if save_to_db:
             pdf_data = PDFExtractedData(
                 filename=file.filename,
@@ -196,12 +209,14 @@ async def extract_pdf(
             session.add(pdf_data)
             session.commit()
             session.refresh(pdf_data)
+            saved_id = str(pdf_data.id)
             logger.info(f"Saved to database with ID: {pdf_data.id}")
         
         return PDFExtractionResponse(
             success=True,
             extracted_data=extracted_data,
             filename=file.filename,
+            id=saved_id,
         )
         
     except json.JSONDecodeError as e:
@@ -264,5 +279,71 @@ def get_extraction_config() -> dict[str, Any]:
     return read_config(str(config_path))
 
 
+@router.get("/{pdf_id}")
+def get_pdf_extraction_detail(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    pdf_id: str,
+) -> Any:
+    """
+    Get detailed PDF extraction data by ID.
+    """
+    from sqlmodel import select
+    
+    try:
+        pdf_uuid = UUID(pdf_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid PDF ID format")
+    
+    statement = (
+        select(PDFExtractedData)
+        .where(PDFExtractedData.id == pdf_uuid)
+        .where(PDFExtractedData.owner_id == current_user.id)
+    )
+    
+    pdf_data = session.exec(statement).first()
+    
+    if not pdf_data:
+        raise HTTPException(status_code=404, detail="PDF extraction data not found")
+    
+    return {
+        "id": str(pdf_data.id),
+        "filename": pdf_data.filename,
+        "extracted_data": json.loads(pdf_data.extracted_data),
+        "created_at": pdf_data.created_at,
+    }
 
 
+@router.delete("/{pdf_id}")
+def delete_pdf_extraction(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    pdf_id: str,
+) -> dict[str, str]:
+    """
+    Delete PDF extraction data by ID.
+    """
+    from sqlmodel import select
+    
+    try:
+        pdf_uuid = UUID(pdf_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid PDF ID format")
+    
+    statement = (
+        select(PDFExtractedData)
+        .where(PDFExtractedData.id == pdf_uuid)
+        .where(PDFExtractedData.owner_id == current_user.id)
+    )
+    
+    pdf_data = session.exec(statement).first()
+    
+    if not pdf_data:
+        raise HTTPException(status_code=404, detail="PDF extraction data not found")
+    
+    session.delete(pdf_data)
+    session.commit()
+    
+    return {"message": "PDF extraction data deleted successfully"}
