@@ -16,6 +16,7 @@ from app.models import (
     PDFExtractionRequest,
     PDFExtractionResponse,
 )
+from sqlmodel import select, func
 
 router = APIRouter(prefix="/pdf-extraction", tags=["pdf-extraction"])
 logger = logging.getLogger(__name__)
@@ -234,18 +235,24 @@ async def extract_pdf(
         )
 
 
-@router.get("/history")
-def get_extraction_history(
+@router.get("/patient")
+def get_patient_extractions(
     session: SessionDep,
     current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
     """
-    Get extraction history for current user.
-    """
-    from sqlmodel import select
+    Get patient extractions with pagination for current user.
+    """ 
+    # Get total count
+    count_statement = (
+        select(func.count(PDFExtractedData.id))
+        .where(PDFExtractedData.owner_id == current_user.id)
+    )
+    total_count = session.exec(count_statement).one()
     
+    # Get paginated results
     statement = (
         select(PDFExtractedData)
         .where(PDFExtractedData.owner_id == current_user.id)
@@ -267,6 +274,9 @@ def get_extraction_history(
             for item in results
         ],
         "count": len(results),
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
     }
 
 
@@ -279,71 +289,69 @@ def get_extraction_config() -> dict[str, Any]:
     return read_config(str(config_path))
 
 
-@router.get("/{pdf_id}")
-def get_pdf_extraction_detail(
+@router.get("/{patientId}")
+def get_patient_data(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    pdf_id: str,
+    patientId: str,
 ) -> Any:
     """
-    Get detailed PDF extraction data by ID.
+    Get detailed patient data by ID.
     """
-    from sqlmodel import select
-    
+
     try:
-        pdf_uuid = UUID(pdf_id)
+        patient_uuid = UUID(patientId)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid PDF ID format")
+        raise HTTPException(status_code=400, detail="Invalid patient ID format")
     
     statement = (
         select(PDFExtractedData)
-        .where(PDFExtractedData.id == pdf_uuid)
+        .where(PDFExtractedData.id == patient_uuid)
         .where(PDFExtractedData.owner_id == current_user.id)
     )
     
-    pdf_data = session.exec(statement).first()
+    patient_data = session.exec(statement).first()
     
-    if not pdf_data:
-        raise HTTPException(status_code=404, detail="PDF extraction data not found")
+    if not patient_data:
+        raise HTTPException(status_code=404, detail="Patient data not found")
     
     return {
-        "id": str(pdf_data.id),
-        "filename": pdf_data.filename,
-        "extracted_data": json.loads(pdf_data.extracted_data),
-        "created_at": pdf_data.created_at,
+        "id": str(patient_data.id),
+        "filename": patient_data.filename,
+        "extracted_data": json.loads(patient_data.extracted_data),
+        "created_at": patient_data.created_at,
     }
 
 
-@router.delete("/{pdf_id}")
-def delete_pdf_extraction(
+@router.delete("/{patientId}")
+def delete_patient_data(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    pdf_id: str,
+    patientId: str,
 ) -> dict[str, str]:
     """
-    Delete PDF extraction data by ID.
+    Delete patient data by ID.
     """
-    from sqlmodel import select
-    
+  
     try:
-        pdf_uuid = UUID(pdf_id)
+        patient_uuid = UUID(patientId)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid PDF ID format")
+        raise HTTPException(status_code=400, detail="Invalid patient ID format")
     
     statement = (
         select(PDFExtractedData)
-        .where(PDFExtractedData.id == pdf_uuid)
+        .where(PDFExtractedData.id == patient_uuid)
         .where(PDFExtractedData.owner_id == current_user.id)
     )
     
-    pdf_data = session.exec(statement).first()
+    patient_data = session.exec(statement).first()
     
-    if not pdf_data:
-        raise HTTPException(status_code=404, detail="PDF extraction data not found")
+    if not patient_data:
+        raise HTTPException(status_code=404, detail="Patient data not found")
     
-    session.delete(pdf_data)
+    session.delete(patient_data)
     session.commit()
     
-    return {"message": "PDF extraction data deleted successfully"}
+    return {"message": "Patient data deleted successfully"}
